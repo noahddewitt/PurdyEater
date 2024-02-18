@@ -31,11 +31,25 @@ pedSplitter <- function(crossString, pedString) {
   #We should fix this later but for now we're simply not equipped for complex x's.
   if (grepl("\\/\\d+\\/", cleanString)) { return(NA) }
   
-  
   #First, deal with any top crosses. Check first
-  topCross <- grepl("\\(.*\\/.*\\)|\\/\\/", cleanString)
+  is_topCross <- grepl("\\(.*\\/.*\\)|\\/\\/", cleanString)
   
-  if(topCross) {
+  is_complexCross <- grepl("\\/[0-9]\\/", cleanString)
+  
+  is_backCross <-grepl("\\*", Pedigree)
+  
+  if (is_complexCross) {
+    #what is the highest number of those "/n/" complex crosses
+    crossLevels <- regmatches(cleanString,gregexpr("\\/[0-9]\\/",cleanString))[[1]]
+    crossLevels <- gsub("/", "", crossLevels)
+    max_crossLevel <- max(as.numeric(crossLevels))
+  }
+  
+  if (is_backCross) {
+    #Do something
+  }
+  
+  if(is_topCross) {
     if (grepl("\\(.*\\/.*\\)", cleanString)) {
       pedRoot <- gsub("\\(.*\\/.*\\)", "", cleanString)
       
@@ -96,10 +110,15 @@ pedSplitter <- function(crossString, pedString) {
         pF1 <- c(p1, p2)[which(isF1)]
         p1 <- c(p1, p2)[which(!isF1)]
         
-        newPedDF <- data.frame(Id = c(paste0(crossString, "F1"), crossString),
+        f1P1 <- gsub("\\/.*$", "", pF1)
+        f1P2 <- gsub("^.*\\/", "", pF1)
+          
+        f1Name <- gsub("\\/", "@", pF1)
+        
+        newPedDF <- data.frame(Id = c(f1Name, crossString),
                                P1 = c(f1P1, p1),
                                P2 = c(f1P2, f1Name),
-                               Gen = c("_F1", "Root"),
+                               Gen = c("F1", "Root"),
                                baseStr = c(pedString, pedString))
         
         return(newPedDF)
