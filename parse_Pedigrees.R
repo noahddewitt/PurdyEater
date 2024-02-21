@@ -23,33 +23,32 @@ pedVec <- famDF$Pedigree
 #LA21200 (LA12275LDH-56 / GA15VDH---18LE43F)/LA21202(LA12275LDH-56 / KWS246)
 #Need to write additional if/then for double-F1 top cross. 
 
-pedSplitter <- function(crossString, pedString) {
+split_ped <- function(crossString, pedString) {
   #Get rid of all white spaces, alon with ",F1"s you see in top crosses
   cleanString <- gsub("\\s*", "", pedString)
   cleanString <- gsub("\\,F1", "", cleanString)
   
-  #We should fix this later but for now we're simply not equipped for complex x's.
-  if (grepl("\\/\\d+\\/", cleanString)) { return(NA) }
-  
-  #First, deal with any top crosses. Check first
-  is_topCross <- grepl("\\(.*\\/.*\\)|\\/\\/", cleanString)
-  
-  is_complexCross <- grepl("\\/[0-9]\\/", cleanString)
-  
-  is_backCross <-grepl("\\*", Pedigree)
-  
-  if (is_complexCross) {
+ 
+  #TODO -- after checking it's a complex cross, recursively build out.
+  #Probly need to split the below code out into a separate function and call it
+  #From within a while loop
+  if (grepl("\\/[0-9]\\/", cleanString)) {
     #what is the highest number of those "/n/" complex crosses
     crossLevels <- regmatches(cleanString,gregexpr("\\/[0-9]\\/",cleanString))[[1]]
     crossLevels <- gsub("/", "", crossLevels)
     max_crossLevel <- max(as.numeric(crossLevels))
   }
-  
-  if (is_backCross) {
-    #Do something
+ 
+  #We can't just "inflate" a BC component into a Purdy, because would have to re-order
+  #Instead, we can replace the BC part of pedigree with a generated accession name, and create
+  #a 3-column pedigree record for that BC part
+  #Still likely have to call this when a) pedigree is a simple BC or b) as part of simplifying complex purdy
+  if (grepl("\\*", Pedigree)) {
+    pedString <- convert_back_cross()
   }
   
-  if(is_topCross) {
+  #If it's not complex cross (>2) deal with any top crosses
+  if(grepl("\\(.*\\/.*\\)|\\/\\/", cleanString)) {
     if (grepl("\\(.*\\/.*\\)", cleanString)) {
       pedRoot <- gsub("\\(.*\\/.*\\)", "", cleanString)
       
@@ -152,7 +151,57 @@ pedSplitter <- function(crossString, pedString) {
   }
 }
 
-pedList <- mapply(pedSplitter, crossString = famDF$Fam_ID, pedString = famDF$Pedigree)
+#Converts backcrosses to move BC information into ped tree -- so:
+#The place to do this is in the simple pedigrees -- we want to only run this function when we get to the backcross level!
+#So Genotype | P1 | 2*P2 -> Genotype | P1_BC1 | P2
+#                           P1_BC1   |  P1    | P2
+#backXConv <- function(prog, donPar, recPar, numFirst) {
+convert_back_cross <- function(backCrossString) {
+  #Identify backcross 
+  p1 <- gsub("\\/(.*)", "", backCrossString)
+  p2 <- gsub("(.*)\\/", "", backCrossString)
+  
+  if (grepl("\\*", p1) & (!grepl("\\*", p2))) {
+    pRec <- p1
+    pDon <- p2
+  } else if ((!grepl("\\*", p1)) & grepl("\\*", p2)) {
+    pRec <- p2
+    pDon <- p1
+  } else {
+    return("Error: Invalid BC string")
+  }
+  
+  #Technically this allows us to parse incorrect Purdy notation pedigrees
+  #Hypothetically, you could have a BC over 9. Not that I've seen that myself...
+  if (grepl("^\\d{1,2}\\*", pRec)) {
+    bcMatch <- regmatches(pRec,regexec("(.+)\\*(\\d)$",pRec))[[1]]
+    bcNum <- as.numeric(bcMatch[2])
+    pBC <- bcMatch[3]
+  } else if (grepl("\\*\\d{1,2}$", pRec)) {
+    bcMatch <- regmatches(pRec,regexec("(.+)\\*(\\d)$",pRec))[[1]]
+    bcNum <- as.numeric(bcMatch[3])
+    pBC <- bcMatch[2]
+  } else {
+    return("Error: Invalid BC String")
+  }
+  
+  oldName <- paste0(pDon, "@", pBC)
+  
+  #I simply don't believe that any meaningful information on female/male
+  #ends up preserved in BC notation
+  newPed <- data.frame(lineName = oldName, parentOne = pDon, parentTwo = pBC)
+  
+  for (i in c(2:bcNum)) {
+    newName <- c(paste0(oldName, "@", pBC))
+    newPed <- rbind(newPed, c(lineName = newName, parentOne = oldName, parentTwo = pBC))
+    
+    oldName <- newName
+  }
+  #newPed[bcNum,1] <- prog
+  return(newPed)
+}
+
+pedList <- mapply(split_ped, crossString = famDF$Fam_ID, pedString = famDF$Pedigree)
 
 pedDF <- do.call("rbind", pedList)
 
